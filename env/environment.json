@@ -1,0 +1,56 @@
+{
+  "driver": "benchmark_driver_v25.py",
+  "protocol_version": 25,
+  "timestamp": "2026-06-19T20:56:56.362300",
+  "python": "3.12.3 (main, Mar 23 2026, 19:04:32) [GCC 13.3.0]",
+  "platform": "Linux-6.17.0-29-generic-x86_64-with-glibc2.39",
+  "machine": "x86_64",
+  "torch": "2.10.0+cu128",
+  "cuda": "12.8",
+  "cudnn": 91002,
+  "gpus": [
+    "NVIDIA H200 NVL",
+    "NVIDIA H200 NVL"
+  ],
+  "numpy": "2.4.6",
+  "pandas": "2.3.3",
+  "strict_validation": true,
+  "seed": 42,
+  "seeds": [
+    42,
+    43,
+    44
+  ],
+  "ablation": false,
+  "tf32": "1",
+  "serialize_gpu_tasks": true,
+  "tabpfn": "8.0.8",
+  "tabpfn_fingerprint": {
+    "tabpfn_version": "8.0.8",
+    "model_path": "/home/jacklu/v24/tabpfn_models/tabpfn-v3-classifier-v3_default.ckpt",
+    "sha256": "d0d865d54dfbc524f5703104be90620182dca7e5fb2c16de72e9959ea18f3988",
+    "pinned": true,
+    "size_bytes": 212804803
+  },
+  "v25_integrity_and_resilience": [
+    "objective-after-pruning",
+    "strict-inner-preprocessing-and-concept-selection",
+    "inner-train-class-weights",
+    "nan-not-zero-on-failure",
+    "retry-failed-checkpoints",
+    "M>=ceil(log2 K)-fail-fast",
+    "seed-before-model-init",
+    "serialized-gpu-rng",
+    "explicit-tabpfn-model-path-and-sha256",
+    "local-cacp-compatible-reporting-no-external-cacp"
+  ],
+  "sklearn": "1.9.0",
+  "optuna": "4.7.0",
+  "cacp_compat": "1.0.0-local",
+  "xgboost": "3.3.0",
+  "lightgbm": "4.6.0",
+  "catboost": "1.2.10",
+  "interpret": "0.7.8",
+  "imodels": "unknown",
+  "joblib": "1.5.3"
+}
