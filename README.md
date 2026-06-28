@@ -1,7 +1,7 @@
 # CBM-P1TS — Code and Results for Peer Review
 
 **Paper:** Auditable distillation of tabular foundation models into
-percentile-based P1-TS concept-bottleneck fuzzy rules
+percentile-based fuzzy rules under a concept bottleneck
 **Submitted to:** Information Sciences (Elsevier)
 **Protocol hash:** 9e2fd6f6c51d2e9150021e0e2ef5e8c539775437f6c81a0950760b7b4987819e
 
