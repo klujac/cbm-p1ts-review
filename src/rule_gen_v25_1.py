@@ -1,54 +1,32 @@
 """
-rule_gen_v25_1.py — resilient companion of benchmark_driver_v25.py
-Adds [V21-A5] environment.json manifest; protocol identical to rule_gen_v20.
-===========================================================================
-Same fix set as benchmark_driver_v02 (justification: diagnoza.tex):
-  [V02-1]  _FastTensorLoader: vectorised batching of GPU-resident tensors
-           (replaces DataLoader+TensorDataset per-sample indexing — the
-           main ~10-50x CBM training slowdown).
-  [V02-2]  CPU classifiers in PROCESSES (joblib/loky) with automatic
-           thread fallback; isolates runaway native threads left behind
-           by TimeoutWrapper (CORELS/BRL/BRS/IMLI/IDS ignore the injected
-           async exception) from the CBM/GPU process.
-  [V02-3]  TF32 on Hopper GPUs (LDRV2_TF32=0 to disable).
-  [V02-4]  Optional Optuna HPO wall-clock budget per fit:
-           LDRV2_HPO_TIMEOUT seconds (0/unset = v01 protocol).
-  [V02-5]  Checkpointing per (dataset, classifier, fold) to
-           checkpoint_rows.csv; resume by default (LDRV2_NO_RESUME=1
-           to recompute everything).
-  [V02-6]  Resource monitor every LDRV2_MON_INTERVAL s (default 60):
-           CPU load, RAM, GPU util/VRAM, tasks done/total, [STALL].
-  [V02-7]  Dead fut.result(timeout=...) after as_completed removed
-           (it could never fire) — replaced by STALL detection.
-  [V02-8]  Global socket timeout LDRV2_NET_TIMEOUT (default 180 s):
-           OpenML / TabPFN-checkpoint downloads raise instead of hanging
-           forever (root cause of the observed 10-day startup hang of
-           benchmark_driver v01; same code path exists here).
-  [V02-9]  [STALL] fires also with zero completed tasks (startup hang).
-  [V02-10] TabPFN pre-warm in a watchdog thread (LDRV2_PREWARM_TIMEOUT,
-           default 600 s).
-Configuration is via environment variables only — the fast/medium/normal
-CLI of rule_gen.py is preserved unchanged. NOTE: [V02-1] changes the batch
-shuffling RNG (CUDA instead of DataLoader CPU RNG) and [V02-3] the matmul
-precision (TF32, rel. err ~1e-3); numerical results may differ minimally
-from v01 at the same SEED. V20 further changes the default CBM_KE validation
-protocol: the inner validation split is not used for final CBM weight updates,
-and the teacher is fitted only on the inner-fit subset. Set
-LDRV20_STRICT_VALIDATION=0 only for historical v16 reproduction.
+rule_gen.py - companion of benchmark_driver.py: generates the
+natural-language P1-TS rule explanations for the trained CBM-P1TS model
+(used for the illustrative diabetes example), with TabPFN-3 as the
+distillation teacher.
+
+Shares the resilient execution engine of benchmark_driver.py:
+vectorised batching of GPU-resident tensors, process-isolated CPU
+classifiers with thread fallback, an optional Optuna HPO wall-clock
+budget, per-(dataset, classifier, fold) checkpointing with
+resume-by-default, a periodic resource monitor, and global socket
+timeouts on OpenML and TabPFN-checkpoint downloads.
+
+Runtime configuration is read from environment variables; the
+dependency manifest is written to environment.json.
+Changelog: see CHANGELOG.md
 """
-# ESWA v25 reviewer package: rule_gen.py
+# reviewer package: rule_gen.py
 # Standalone interactive version with fast / medium / normal modes.
 # This script reproduces the illustrative diabetes rule-generation
 # example from Section 3.12 of the manuscript.
-#
 # Key features:
-#   - TabPFN-3 is used for knowledge-enhanced rule generation.
-#   - Hardware auto-detection: number of GPUs and CPU cores is detected
-#     at runtime and the number of GPU/CPU workers is chosen accordingly.
-#   - Single-process mode for small benchmarks (<=3 datasets) to avoid
-#     subprocess overhead and VRAM contention.
-#   - Per-fold progress reporting with ETA, so the user always sees
-#     how far the experiment has progressed.
+# TabPFN-3 is used for knowledge-enhanced rule generation.
+# Hardware auto-detection: number of GPUs and CPU cores is detected
+# at runtime and the number of GPU/CPU workers is chosen accordingly.
+# Single-process mode for small benchmarks (<=3 datasets) to avoid
+# subprocess overhead and VRAM contention.
+# Per-fold progress reporting with ETA, so the user always sees
+# how far the experiment has progressed.
 
 import os
 import sys
@@ -104,7 +82,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.feature_selection import mutual_info_classif
 from torch.utils.data import DataLoader, TensorDataset
 
-# [V25-STANDALONE] Local reporting/statistics implementation.
+# Local reporting/statistics implementation.
 # No external ``cacp`` package or ``cacp/`` directory is required.
 from cacp_compat import (
     process_comparison_results, process_comparison_results_plots,
@@ -119,7 +97,7 @@ except ImportError:
     _XGBOOST = False
     print("[WARN] xgboost unavailable. Installation: pip install xgboost")
 
-# ESWA v25 rule generation uses TabPFN-3 as the teacher.
+# rule generation uses TabPFN-3 as the teacher.
 _DISABLED_TREE_TEACHER_CLASSIFIER = None
 _DISABLED_TREE_TEACHER = False
 print("[INFO] Rule-generation protocol: TabPFN-3 teacher, CBM_KE student.")
@@ -236,14 +214,14 @@ os.environ['PYTORCH_NVML_BASED_CUDA_CHECK'] = '0'
 warnings.filterwarnings("ignore")
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-# [V02-3] TF32 for nn.Linear matmuls on Hopper (H100/H200): 2-8x faster
+# TF32 for nn.Linear matmuls on Hopper (H100/H200): 2-8x faster
 # Linear layers at ~1e-3 relative error. Disable: export LDRV2_TF32=0
 if torch.cuda.is_available() and os.environ.get('LDRV2_TF32', '1') == '1':
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
     print(">>> [V02] TF32 ENABLED (LDRV2_TF32=0 to disable)", flush=True)
 
-# [V02-8] Global socket timeout: network calls without an explicit timeout
+# Global socket timeout: network calls without an explicit timeout
 # (OpenML download, TabPFN checkpoint download) raise after
 # LDRV2_NET_TIMEOUT seconds instead of blocking forever. The exceptions
 # are handled by the existing try/except blocks.
@@ -252,7 +230,7 @@ _socket.setdefaulttimeout(float(os.environ.get('LDRV2_NET_TIMEOUT', '180')))
 print(f">>> [V02] Global network timeout: "
       f"{_socket.getdefaulttimeout():.0f}s (LDRV2_NET_TIMEOUT)", flush=True)
 
-# [V02] runtime configuration via environment variables
+# runtime configuration via environment variables
 _CBM_HPO_TIMEOUT = float(os.environ.get('LDRV2_HPO_TIMEOUT', '0') or 0)
 _MON_INTERVAL    = int(os.environ.get('LDRV2_MON_INTERVAL', '60'))
 _RESUME          = os.environ.get('LDRV2_NO_RESUME', '0') != '1'
@@ -302,7 +280,7 @@ try:
 except ImportError:
     minimize_scalar = None
 
-# [V02-2] Lock removed: threading.Lock is not picklable (cloudpickle/
+# Lock removed: threading.Lock is not picklable (cloudpickle/
 # loky), and dict[tid]=v / dict.get(tid) are atomic in CPython (GIL).
 _PROBA_CACHE = {}
 
@@ -363,7 +341,7 @@ class ProbaCachingClassifier(BaseEstimator, ClassifierMixin):
                 proba = None
 
             _PROBA_CACHE[tid] = proba
-            self._last_proba  = proba   # [V02-2] instance copy (loky-safe)
+            self._last_proba  = proba  # instance copy (loky-safe)
         except Exception:
             _PROBA_CACHE[tid] = None
             self._last_proba  = None
@@ -400,7 +378,7 @@ def _auc_roc(y_true, y_pred, labels=None):
         except Exception:
             pass
 
-    # [V24-FIX3] AUC is undefined without usable scores; never
+    # AUC is undefined without usable scores; never
     # substitute a different metric under the AUC_ROC name.
     return float('nan')
 
@@ -499,10 +477,10 @@ class Fold:
         self.y_test  = y_test
         self.index   = index
         self.labels  = np.unique(np.concatenate([y_train, y_test]))
-        # [V24] Preserve raw outer-fold data and schema.  CBM/CBM_KE use
+        # Preserve raw outer-fold data and schema. CBM/CBM_KE use
         # these arrays so their inner validation preprocessing can be fitted
         # strictly on the inner-training subset rather than on all outer-train
-        # rows.  Other baselines continue to use x_train/x_test below.
+        # rows. Other baselines continue to use x_train/x_test below.
         self.x_train_raw = np.asarray(x_train_raw)
         self.x_test_raw  = np.asarray(x_test_raw)
         self.cat_idx = list(cat_idx)
@@ -621,28 +599,28 @@ class LocalDataset:
 
 DATASETS_BINARY = {
     'diabetes':    {'name': 'diabetes',                         'version': 1},
-    #'credit-g':    {'name': 'credit-g',                         'version': 1},
-    #'blood':       {'name': 'blood-transfusion-service-center', 'version': 1},
-    #'wdbc':        {'name': 'wdbc',                             'version': 1},
-    #'tic-tac-toe': {'name': 'tic-tac-toe',                      'version': 1},
-    #'spambase':    {'name': 'spambase',                         'version': 1},
-    #'magic':       {'name': 'MagicTelescope',                   'version': 1},
-    #'bank':        {'name': 'bank-marketing',                   'version': 1},
-    #'phoneme':     {'name': 'phoneme',                          'version': 1},
-    #'kr-vs-kp':    {'name': 'kr-vs-kp',                         'version': 1},
+    # 'credit-g': {'name': 'credit-g', 'version': 1},
+    # 'blood': {'name': 'blood-transfusion-service-center', 'version': 1},
+    # 'wdbc': {'name': 'wdbc', 'version': 1},
+    # 'tic-tac-toe': {'name': 'tic-tac-toe', 'version': 1},
+    # 'spambase': {'name': 'spambase', 'version': 1},
+    # 'magic': {'name': 'MagicTelescope', 'version': 1},
+    # 'bank': {'name': 'bank-marketing', 'version': 1},
+    # 'phoneme': {'name': 'phoneme', 'version': 1},
+    # 'kr-vs-kp': {'name': 'kr-vs-kp', 'version': 1},
 }
 
 DATASETS_MULTI = {
-    #'balance-scale': {'name': 'balance-scale',    'version': 1},
-    #'vehicle':       {'name': 'vehicle',          'version': 1},
-    #'car':           {'name': 'car',              'version': 3},
-    #'segment':       {'name': 'segment',          'version': 1},
-    #'satimage':      {'name': 'satimage',         'version': 1},
-    #'pendigits':     {'name': 'pendigits',        'version': 1},
-    #'mfeat-factors': {'name': 'mfeat-factors',    'version': 1},
-    #'optdigits':     {'name': 'optdigits',        'version': 1},
-    #'page-blocks':   {'name': 'page-blocks',      'version': 1},
-    #'wine-quality':  {'name': 'wine-quality-white','version': 1},
+    # 'balance-scale': {'name': 'balance-scale', 'version': 1},
+    # 'vehicle': {'name': 'vehicle', 'version': 1},
+    # 'car': {'name': 'car', 'version': 3},
+    # 'segment': {'name': 'segment', 'version': 1},
+    # 'satimage': {'name': 'satimage', 'version': 1},
+    # 'pendigits': {'name': 'pendigits', 'version': 1},
+    # 'mfeat-factors': {'name': 'mfeat-factors', 'version': 1},
+    # 'optdigits': {'name': 'optdigits', 'version': 1},
+    # 'page-blocks': {'name': 'page-blocks', 'version': 1},
+    # 'wine-quality': {'name': 'wine-quality-white','version': 1},
 }
 
 
@@ -721,16 +699,15 @@ MAX_CONCEPTS = 12
 P_LOW_PCT    = 20.0
 P_HIGH_PCT   = 80.0
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------
 # Standalone interactive execution modes
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------
 # normal: closest to the original full rule-generation protocol.
 # medium: approximately one order of magnitude faster than normal.
-# fast:   quick rule-inspection mode.
-#
+# fast: quick rule-inspection mode.
 # All modes remain data-derived. The fast and medium modes only reduce
 # optimisation/training budgets; they do not use hard-coded rules.
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------
 
 MODE_CONFIGS = {
     "fast": {
@@ -1897,7 +1874,7 @@ class CBMClassifier(BaseEstimator, ClassifierMixin):
         idx_tr, idx_val = train_test_split(
             idx_all, test_size=0.20, stratify=y, random_state=SEED)
 
-        # [V24-FIX2] Split first; fit preprocessing, PPL percentiles and mRMR
+        # Split first; fit preprocessing, PPL percentiles and mRMR
         # only on inner-train in strict mode.
         X_all, X_tr, X_val = self._prepare_inputs(X, idx_tr, idx_val)
         d = X_all.shape[1]
@@ -1960,7 +1937,7 @@ class CBMClassifier(BaseEstimator, ClassifierMixin):
                     "CBM_KE requested, but no TabPFN soft labels were produced.")
 
         def make_train_loader(X_a, y_a, C_a, bs, soft_a=None):
-            # [V02-1] FastTensorLoader instead of DataLoader(TensorDataset)
+            # FastTensorLoader instead of DataLoader(TensorDataset)
             ts = [torch.tensor(X_a, dtype=torch.float32, device=device),
                   torch.tensor(y_a, dtype=torch.long,    device=device),
                   torch.tensor(C_a, dtype=torch.float32, device=device)]
@@ -2347,9 +2324,9 @@ class RIPPERMulticlassWrapper(BaseEstimator, ClassifierMixin):
 
 os.environ.setdefault('TABPFN_ACCEPT_MODEL_LICENSE', 'true')
 
-# ---------------------------------------------------------------------
-# [V20] TabPFN-3 teacher / baseline configuration
-# ---------------------------------------------------------------------
+# --------------------------------------------------------------------
+# TabPFN-3 teacher / baseline configuration
+# --------------------------------------------------------------------
 _TABPFN_MODE = 'tabpfn-3-explicit-checkpoint'
 _TABPFN_PACKAGE_VERSION = 'unknown'
 if _TABPFN:
@@ -2359,8 +2336,8 @@ if _TABPFN:
     except Exception:
         pass
 
-# [V24-FIX6] Publication runs pin the exact checkpoint explicitly.  The
-# official TabPFN API supports TabPFNClassifier(model_path=...).  Guessing the
+# Publication runs pin the exact checkpoint explicitly. The
+# official TabPFN API supports TabPFNClassifier(model_path=...). Guessing the
 # largest file in a cache is forbidden because it may not be the file used.
 _TABPFN_MODEL_PATH = os.environ.get(
     'LDRV25_TABPFN_MODEL_PATH', os.environ.get('TABPFN_MODEL_PATH', '')
@@ -2800,25 +2777,25 @@ def build_classifiers():
 
     clfs = []
 
-    #clfs.append(('CBM',
-        #wrap(lambda n_i, n_c: CBMClassifier(mode='standalone'))))
+    # clfs.append(('CBM',
+        # wrap(lambda n_i, n_c: CBMClassifier(mode='standalone'))))
     clfs.append(('CBM_KE',
         wrap(lambda n_i, n_c: CBMClassifier(mode='ke'))))
 
-    #clfs.append(('DT_depth5',
-        #wrap(lambda n_i, n_c: DecisionTreeClassifier(
-            #max_depth=5, random_state=SEED, class_weight='balanced'))))
-    #clfs.append(('DT_depth3',
-        #wrap(lambda n_i, n_c: DecisionTreeClassifier(
-            #max_depth=3, random_state=SEED, class_weight='balanced'))))
+    # clfs.append(('DT_depth5',
+        # wrap(lambda n_i, n_c: DecisionTreeClassifier(
+            # max_depth=5, random_state=SEED, class_weight='balanced'))))
+    # clfs.append(('DT_depth3',
+        # wrap(lambda n_i, n_c: DecisionTreeClassifier(
+            # max_depth=3, random_state=SEED, class_weight='balanced'))))
 
-    #clfs.append(('LogReg',
-        #wrap(lambda n_i, n_c: LogisticRegression(
-            #max_iter=1000, random_state=SEED,
-            #class_weight='balanced', solver='lbfgs'))))
+    # clfs.append(('LogReg',
+        # wrap(lambda n_i, n_c: LogisticRegression(
+            # max_iter=1000, random_state=SEED,
+            # class_weight='balanced', solver='lbfgs'))))
 
-    #clfs.append(('KNN_k5',
-        #wrap(lambda n_i, n_c: KNeighborsClassifier(n_neighbors=5, n_jobs=1))))
+    # clfs.append(('KNN_k5',
+        # wrap(lambda n_i, n_c: KNeighborsClassifier(n_neighbors=5, n_jobs=1))))
 
     if _IMODELS:
         clfs.append(('FIGS',
@@ -2924,35 +2901,35 @@ def build_classifiers():
                 random_state=SEED, eval_metric='mlogloss',
                 verbosity=0, use_label_encoder=False))))
 
-    #clfs.append(('RandomForest',
-        #wrap(lambda n_i, n_c: RandomForestClassifier(
-            #n_estimators=300, max_depth=None,
-            #class_weight='balanced', random_state=SEED, n_jobs=1))))
+    # clfs.append(('RandomForest',
+        # wrap(lambda n_i, n_c: RandomForestClassifier(
+            # n_estimators=300, max_depth=None,
+            # class_weight='balanced', random_state=SEED, n_jobs=1))))
 
-    #clfs.append(('MLP',
-        #wrap(lambda n_i, n_c: MLPClassifier(
-            #hidden_layer_sizes=(256, 128), max_iter=500,
-            #random_state=SEED, early_stopping=True,
-            #validation_fraction=0.1))))
+    # clfs.append(('MLP',
+        # wrap(lambda n_i, n_c: MLPClassifier(
+            # hidden_layer_sizes=(256, 128), max_iter=500,
+            # random_state=SEED, early_stopping=True,
+            # validation_fraction=0.1))))
 
-    #clfs.append(('SVM_RBF',
-        #wrap(lambda n_i, n_c: SVC(
-            #kernel='rbf', probability=True,
-            #class_weight='balanced', random_state=SEED, C=1.0))))
+    # clfs.append(('SVM_RBF',
+        # wrap(lambda n_i, n_c: SVC(
+            # kernel='rbf', probability=True,
+            # class_weight='balanced', random_state=SEED, C=1.0))))
 
     print(f"\n>>> Loaded classifiers: {len(clfs)}", flush=True)
     for name, _ in clfs:
         print(f"    - {name}", flush=True)
     return clfs
 
-CBM_NAMES = {'CBM_KE'}#'CBM', 'CBM_KE'}
+CBM_NAMES = {'CBM_KE'}  # 'CBM', 'CBM_KE'}
 
 SOTA_INTERPRETABLE_NAMES = set()
-    #{
-    #'EBM', 'FIGS', 'RuleFit', 'RIPPER', 'LogReg',
-    #'CORELS', 'BRCG', 'IMLI', 'BRS', 'BRL', 'IDS', 'DL8.5',
-    #'DT_depth5', 'DT_depth3',
-#}
+    # {
+    # 'EBM', 'FIGS', 'RuleFit', 'RIPPER', 'LogReg',
+    # 'CORELS', 'BRCG', 'IMLI', 'BRS', 'BRL', 'IDS', 'DL8.5',
+    # 'DT_depth5', 'DT_depth3',
+# }
 SOTA_INTERPRETABLE_TOP5_COUNT = 5
 
 SOTA_NONINTERPRETABLE_NAMES = {'TabPFN'}
@@ -3196,7 +3173,7 @@ def merge_results(dir0, dir1, merged_dir):
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# [V24] PyTorch/NumPy RNGs are process-global.  Publication-integrity mode
+# PyTorch/NumPy RNGs are process-global. Publication-integrity mode
 # serializes complete GPU tasks so parallel threads cannot overwrite one
 # another's seeds during model construction, shuffling or training.
 _SERIALIZE_GPU_TASKS = os.environ.get('LDRV25_SERIALIZE_GPU_TASKS', '1') != '0'
@@ -3394,9 +3371,9 @@ def _print_progress(ds_idx, n_ds, n_done_results, n_total_results,
     print(f"{'═'*62}\n", flush=True)
 
 # =====================================================================
-# [V02-6/9] RESOURCE MONITOR: CPU / RAM / GPU / progress / STALL
+# RESOURCE MONITOR: CPU / RAM / GPU / progress / STALL
 # =====================================================================
-_STALL_THRESHOLD_S = 1800   # 30 min without a finished task => warning
+_STALL_THRESHOLD_S = 1800  # 30 min without a finished task => warning
 
 
 class _MonState:
@@ -3461,7 +3438,7 @@ def _read_ram_gib():
         with open('/proc/meminfo') as f:
             for line in f:
                 k, v = line.split(':', 1)
-                info[k] = int(v.split()[0])          # kB
+                info[k] = int(v.split()[0])  # kB
         tot   = info.get('MemTotal', 0)     / 1048576.0
         avail = info.get('MemAvailable', 0) / 1048576.0
         return tot, tot - avail
@@ -3497,7 +3474,7 @@ def _resource_monitor_worker(interval: int = 60):
                   f" | tasks {snap['tasks_done']}/{tt} ({pct:.1f}%)"
                   f" | ETA ~{_fmt_time(eta)}", flush=True)
             stall_s = time.time() - snap['t_last_task']
-            # [V02-9] STALL fires ALSO with zero completed tasks: the
+            # STALL fires ALSO with zero completed tasks: the
             # observed v01 failure stalled BEFORE the first task finished
             # (startup network call) and stayed invisible for 10 days.
             if stall_s > _STALL_THRESHOLD_S:
@@ -3582,8 +3559,8 @@ def _start_resource_monitor(interval: int = 60):
 def parallel_run_experiment(datasets, classifiers, results_directory, metrics,
                             n_gpu_workers=5, n_cpu_workers=14):
     os.makedirs(results_directory, exist_ok=True)
-    _start_resource_monitor(interval=_MON_INTERVAL)   # [V02-6]
-    _record_versions(results_directory)               # [V21-A5]
+    _start_resource_monitor(interval=_MON_INTERVAL)
+    _record_versions(results_directory)
 
     gpu_clfs = [(n, f) for n, f in classifiers if _is_gpu_clf(n)]
     cpu_clfs = [(n, f) for n, f in classifiers if not _is_gpu_clf(n)]
@@ -3608,11 +3585,11 @@ def parallel_run_experiment(datasets, classifiers, results_directory, metrics,
           f"= {_n_total_res} CSV rows", flush=True)
     _MON.reset(total=_n_total_res)
 
-    # -----------------------------------------------------------------
-    # [V02-5] CHECKPOINTING: every completed (Dataset, Algorithm, fold)
+    # ----------------------------------------------------------------
+    # CHECKPOINTING: every completed (Dataset, Algorithm, fold)
     # is appended immediately to checkpoint_rows.csv; on restart these
     # tasks are skipped (set LDRV2_NO_RESUME=1 to recompute everything).
-    # -----------------------------------------------------------------
+    # ----------------------------------------------------------------
     _ckpt_path = os.path.join(results_directory, 'checkpoint_rows.csv')
     _ckpt_lock = threading.Lock()
     _done_keys = set()
@@ -3659,7 +3636,7 @@ def parallel_run_experiment(datasets, classifiers, results_directory, metrics,
 
     if _TABPFN and any(_is_gpu_clf(n) for n, _ in classifiers):
         print(f"  [PRE-WARM] TabPFN model-weight pre-loading...", flush=True)
-        # [V02-10] Pre-warm in a watchdog thread: even if a network layer
+        # Pre-warm in a watchdog thread: even if a network layer
         # ignores the global socket timeout, the main flow continues after
         # LDRV2_PREWARM_TIMEOUT seconds (default 600).
         def _prewarm_tabpfn():
@@ -3705,7 +3682,7 @@ def parallel_run_experiment(datasets, classifiers, results_directory, metrics,
 
         _MON.set_ds(ds.name)
 
-        # ----------------------- CPU TASKS [V02-2] ---------------------
+        # ---------------------- CPU TASKS ---------------------
         cpu_task_args = []
         for fold in folds:
             for clf_name, clf_factory in cpu_clfs:
@@ -3749,7 +3726,7 @@ def parallel_run_experiment(datasets, classifiers, results_directory, metrics,
             futs = {ex.submit(_run_one_task, a0, a1, a2, a3, a4,
                               fold_seed=a5): (a2, a1.index)
                     for (a0, a1, a2, a3, a4, a5) in task_args}
-            # [V02-7] no result(timeout=...): after as_completed it could
+            # no result(timeout=...): after as_completed it could
             # never fire; hangs are reported by the [STALL] monitor.
             for fut in as_completed(futs):
                 clf_n2, fold_i2 = futs[fut]
@@ -3798,7 +3775,7 @@ def parallel_run_experiment(datasets, classifiers, results_directory, metrics,
         _cpu_thread = threading.Thread(target=_cpu_collector, daemon=True)
         _cpu_thread.start()
 
-        # ----------------------- GPU TASKS -----------------------------
+        # ---------------------- GPU TASKS -----------------------------
         gpu_futures = {}
         gpu_executor = ThreadPoolExecutor(
             max_workers=n_gpu_workers,
@@ -3825,7 +3802,7 @@ def parallel_run_experiment(datasets, classifiers, results_directory, metrics,
         n_done = 0
         _t_fold_start = time.time()
 
-        # [V02-7] NOTE: in v01, fut.result(timeout=3600) after as_completed
+        # NOTE: in v01, fut.result(timeout=3600) after as_completed
         # could never raise TimeoutError (as_completed yields only ALREADY
         # completed futures); a hung task is detected by [STALL] instead.
         for fut in as_completed(gpu_futures):
@@ -3978,9 +3955,9 @@ if __name__ == '__main__':
           flush=True)
     print(f"{'#'*70}\n", flush=True)
 
-    # ------------------------------------------------------------------
+    # -----------------------------------------------------------------
     # AUTOMATIC HARDWARE DETECTION
-    # ------------------------------------------------------------------
+    # -----------------------------------------------------------------
     import multiprocessing as _mp
     n_gpus       = torch.cuda.device_count()
     n_cpu_cores  = _mp.cpu_count()
@@ -3994,9 +3971,9 @@ if __name__ == '__main__':
             _mem = torch.cuda.get_device_properties(_i).total_memory / 1e9
             print(f"      GPU {_i}: {_nm} ({_mem:.1f} GB)", flush=True)
 
-    # ------------------------------------------------------------------
+    # -----------------------------------------------------------------
     # DATASET LOADING (needed to know whether it is diabetes only)
-    # ------------------------------------------------------------------
+    # -----------------------------------------------------------------
     datasets    = get_all_datasets()
     classifiers = build_classifiers()
     print_dataset_summary(datasets)
@@ -4008,20 +3985,20 @@ if __name__ == '__main__':
               flush=True)
         sys.exit(1)
 
-    # ------------------------------------------------------------------
+    # -----------------------------------------------------------------
     # AUTOMATIC SELECTION OF THE NUMBER OF WORKERS
-    # ------------------------------------------------------------------
+    # -----------------------------------------------------------------
     # Heuristic:
-    #  - For 1 dataset (e.g. diabetes) there is no need for many workers
-    #    overlapping on the same GPU. Each worker loads the TabPFN
-    #    weights into VRAM (~1.5 GB); an excess of workers would cause
-    #    OOM or thrash the GPU. 2 GPU workers are optimal for 1-3
-    #    datasets.
-    #  - For > 3 datasets it pays off to launch more workers so that
-    #    folds of different datasets are processed in parallel.
-    #  - CPU workers: we leave ~75% of the cores for the CPU-based
-    #    classifiers (RF, DT, SVM, KNN, LogReg, MLP); but for 1 dataset
-    #    with 2 classifiers, 4 CPU workers are enough.
+    # For 1 dataset (e.g. diabetes) there is no need for many workers
+    # overlapping on the same GPU. Each worker loads the TabPFN
+    # weights into VRAM (~1.5 GB); an excess of workers would cause
+    # OOM or thrash the GPU. 2 GPU workers are optimal for 1-3
+    # datasets.
+    # For > 3 datasets it pays off to launch more workers so that
+    # folds of different datasets are processed in parallel.
+    # CPU workers: we leave ~75% of the cores for the CPU-based
+    # classifiers (RF, DT, SVM, KNN, LogReg, MLP); but for 1 dataset
+    # with 2 classifiers, 4 CPU workers are enough.
     if n_gpus == 0:
         # No-GPU mode: TabPFN will compute on CPU (very slow, but works)
         n_gpu_workers = 1
@@ -4045,10 +4022,10 @@ if __name__ == '__main__':
               f"n_gpu_workers={n_gpu_workers}, n_cpu_workers={n_cpu_workers}",
               flush=True)
 
-    # ------------------------------------------------------------------
+    # -----------------------------------------------------------------
     # SUBPROCESS SPLIT ONLY FOR THE FULL BENCHMARK ON 2+ GPUs
     # For 1-3 datasets we launch a single process (single mode).
-    # ------------------------------------------------------------------
+    # -----------------------------------------------------------------
     if _GPU_WORKER_ID is not None:
         # Worker mode (launched via subprocess with LDR_GPU_ID=N)
         gpu_id   = int(_GPU_WORKER_ID)

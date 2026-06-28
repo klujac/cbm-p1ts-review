@@ -1,115 +1,33 @@
 """
-benchmark_driver_v25_3.py  —  spawn-safe resilient publication protocol
-================================================================
-V25.3 execution-engine repair (scientific protocol unchanged):
-  * every SQLite connection is explicitly closed;
-  * atomic-result recovery reuses one connection per scan;
-  * an FD regression self-test and master FD counter are included.
-V25 adds crash-safe, monotonic execution on top of V24:
-  * shared SQLite task queue for both H200 workers and CPU workers;
-  * atomic task results and lease/heartbeat recovery after worker death;
-  * automatic GPU-memory waiting and retry with exponential backoff;
-  * persistent Optuna studies per fold/model/seed;
-  * restart and epoch checkpoints for final CBM training;
-  * supervisor restarts workers and dynamically balances GPU tasks;
-  * resume is the default: completed work is never recomputed.
+benchmark_driver.py - reproducible, crash-safe benchmark protocol for
+CBM-P1TS and CBM-KE on tabular OpenML datasets.
+
+Runs the full comparative study (16 classifiers, 20 OpenML datasets,
+stratified 10-fold cross-validation, seeds {42, 43, 44}) with resumable
+execution and a pinned TabPFN-3 teacher.
+
+Execution engine:
+  * shared SQLite task queue for GPU (H200) and CPU workers, with atomic
+    task results and lease/heartbeat recovery after worker death;
+  * automatic GPU-memory waiting with exponential-backoff retry;
+  * persistent Optuna studies per (fold, model, seed);
+  * restart and per-epoch checkpoints for final CBM training;
+  * resume is the default - completed work is never recomputed.
+
+Scientific protocol:
   * strict inner-split preprocessing and class weights;
-  * no numerical zero as an error sentinel in metrics or HPO;
-  * failed checkpoint rows are retried, not silently resumed;
-  * mathematically enforced 2^M >= K (fail-fast when infeasible);
-  * serialized GPU RNG by default for deterministic publication runs;
-  * explicit TabPFN model_path + SHA-256 (no cache-file guessing).
-================================================================
-Historical V23 fixes SIX review findings on top of V22 (all marked [V24-FIXn]):
-  FIX1  Optuna objective now evaluates the model AFTER rule pruning, so
-        the rule budget rb is a real hyperparameter (was a silent no-op).
-  FIX2  PPL percentiles + mRMR concept selection are fitted on the inner
-        TRAIN split only and APPLIED to the inner-val split; the inner-val
-        labels no longer participate in concept selection.
-  FIX3  _auc_roc returns NaN when probabilities are unavailable instead of
-        silently substituting balanced accuracy under the AUC_ROC name.
-  FIX4  failed folds are recorded as NaN + Status='FAILED'+Error, never as
-        a spurious 0.0 that would drag dataset-level means down.
-  FIX5  #concepts lower bound M >= ceil(log2 K) guarantees 2^M >= K, the
-        combinatorial condition for per-class rule coverage.
-  FIX6  restart/trial seeds are set BEFORE model construction (so they
-        govern weight init); TabPFN-3 version + checkpoint SHA-256 are
-        recorded in environment.json for an exactly pinned teacher.
-NOTE: CBM and CBM-KE must be recomputed with this driver; baselines are
-unaffected by FIX1/FIX2/FIX5/FIX6 and may be reused from the v22 run.
-================================================================
-Previous header (V22):
-benchmark_driver_v22.py  —  cost-reduced protocol (paper-aligned)
-================================================================
-V22 changes vs V21 (all marked [V22]):
-  * Main protocol lightened for tractable full runs WITHOUT touching M
-    (M stays Optuna-tuned in [2, min(12,d)] — quality preserved):
-        --trials   default 40   (was 50/120)
-        --restarts default 2
-        --epochs-final default 250
-  * Ablation REMOVED from the default path (--ablation still available
-    on demand for a reviewer rebuttal, but OFF by default).
-  * 'group 2' preset (full 20-dataset run) now uses trials=40,
-    epochs_hpo=80, patience=40, epochs_final=250, restarts=2.
-Everything else identical to V21 (baselines T1, multi-seed T3,
-Holm T4, environment manifest A5, strict validation).
-Base: benchmark_driver_v21.py revision of
-================================================================
-V21 adds, on top of V20 (strict validation, corrected KD softening):
-  [V21-T1] Six new baselines (gated imports): XGBoost, LightGBM,
-           CatBoost, EBM (interpret), RuleFit and FIGS (imodels);
-           binary-only rule learners are wrapped in One-vs-Rest for
-           multiclass tasks.
-  [V21-T2] --ablation adds four CBM_KE ablation variants:
-           _noHedge (hedge search off), _noResid (residual concept-class
-           connection zeroed+frozen), _noLS (label smoothing 0),
-           _noCalib (temperature scaling off).
-  [V21-T3] --seeds "42,43,44": full multi-seed runs; per-seed result
-           directories + concatenated comparison.csv with a Seed column.
-  [V21-T4] Holm-corrected pairwise Wilcoxon reports
-           (wilcoxon_holm_vs_CBM_KE.csv / _vs_CBM.csv) computed from
-           dataset-level means over folds and seeds.
-  [V21-A5] _record_versions(): environment manifest written to
-           environment.json (makes the manuscript's reproducibility
-           sentence true).
-  [V21-P4] --strict-validation / --seeds / --ablation propagated to
-           spawned GPU workers also on the interactive-menu path.
-  [V21-P5] SafeTabPFN default limits aligned with the paper protocol
-           (K<=10, n<=50k); override via LDRV20_TABPFN_*_MAX.
-Base: benchmark_driver_v20.py (which is a revision of
-=======================================================================
-Changes with respect to v01 (full list and justification: diagnoza.tex):
-  [V02-1] _FastTensorLoader: vectorised batching of GPU-resident tensors
-          (replaces DataLoader+TensorDataset, which indexed the data
-          ONE SAMPLE AT A TIME in Python -> hundreds of micro-kernels
-          per batch). The main source of the ~10-50x CBM training slowdown.
-  [V02-2] CPU classifiers executed in PROCESSES (joblib/loky) instead of
-          threads (GIL) — automatic fallback to threads.
-  [V02-3] TF32 on H200 (LDRV2_TF32=0 to disable).
-  [V02-4] Optuna HPO wall-clock budget per fold: --hpo-timeout S
-          (0 = disabled).
-  [V02-5] Checkpointing per (dataset, classifier, fold) + --no-resume.
-          After a restart, already-computed tasks are skipped.
-  [V02-6] Resource monitor: every --monitor-interval s prints to the
-          console the CPU load, RAM, util/VRAM of every GPU, progress %,
-          ETA, and a [STALL] warning when no task has finished
-          for >30 min.
-  [V02-7] Removed the dead timeout fut.result(timeout=...) after
-          as_completed (it could never fire) — replaced by STALL detection.
-  [V02-8] Global socket timeout (LDRV2_NET_TIMEOUT, default 180 s):
-          network calls without a timeout (OpenML download, TabPFN
-          checkpoint download) raise instead of hanging forever — the
-          root cause of the observed 10-day startup hang in v01.
-  [V02-9] [STALL] warning fires also when zero tasks have completed
-          (startup-phase hang), not only mid-experiment.
-  [V02-10] TabPFN pre-warm wrapped in a watchdog thread
-          (LDRV2_PREWARM_TIMEOUT, default 600 s).
-NOTE: [V02-1] changes the order of random batch shuffling (CUDA RNG instead
-of the DataLoader CPU RNG), so numerical results may differ minimally from v01
-for the same SEED. V20 further changes the default CBM/CBM_KE validation
-protocol: the inner validation split is no longer used for final CBM weight
-updates, and the TabPFN teacher in KE mode is fitted only on the inner-fit
-subset. Use --no-strict-validation only for historical v16 reproduction.
+  * AUC-ROC returns NaN (never a 0.0 sentinel) when probabilities are
+    unavailable; failed folds are recorded as NaN with Status=FAILED;
+  * the concept count is lower-bounded so that 2^M >= K (fail-fast
+    otherwise), guaranteeing per-class rule coverage;
+  * deterministic GPU RNG for publication runs;
+  * explicit TabPFN model_path + SHA-256 (no cache-file guessing),
+    recorded together with the pinned environment.
+
+Usage:     python benchmark_driver.py --preset group2 --seeds 42,43,44
+Protocol:  immutable hash recorded in protocol.json
+Versions:  pinned dependency manifest in environment.json
+Changelog: see CHANGELOG.md
 """
 import os
 import sys
@@ -169,7 +87,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.feature_selection import mutual_info_classif
 from torch.utils.data import DataLoader, TensorDataset
 
-# [V25-STANDALONE] Local reporting/statistics implementation.
+# Local reporting/statistics implementation.
 # No external ``cacp`` package or ``cacp/`` directory is required.
 from cacp_compat import (
     process_comparison_results, process_comparison_results_plots,
@@ -185,7 +103,7 @@ except ImportError:
     _XGBOOST = False
     print("[WARN] xgboost unavailable. Installation: pip install xgboost")
 
-# ESWA v20 reported experiments use TabPFN-only distillation.
+# reported experiments use TabPFN-only distillation.
 # The disabled optional tree model development branch is disabled in this reviewer package
 # regardless of whether the optional `disabled_optional_tree_model` library is installed.
 _DISABLED_OPTIONAL_TREE_CLASSIFIER = None
@@ -285,10 +203,10 @@ except ImportError:
     _TABPFN = False
     print("[WARN] tabpfn unavailable. Installation: pip install tabpfn")
 
-# ---------------------------------------------------------------------
-# [V21-T1] Optional baseline imports (all gated; the benchmark runs with
+# --------------------------------------------------------------------
+# Optional baseline imports (all gated; the benchmark runs with
 # whatever is installed and prints what is missing).
-# ---------------------------------------------------------------------
+# --------------------------------------------------------------------
 try:
     from xgboost import XGBClassifier
     _XGB = True
@@ -336,7 +254,7 @@ if torch.cuda.is_available():
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark     = False
 
-# [V02-3] TF32 for nn.Linear matrix multiplications on Hopper GPUs
+# TF32 for nn.Linear matrix multiplications on Hopper GPUs
 # (H100/H200): 2-8x speed-up of Linear layers at a relative error of ~1e-3
 # (10-bit mantissa). To disable: export LDRV2_TF32=0
 if torch.cuda.is_available() and os.environ.get('LDRV2_TF32', '1') == '1':
@@ -344,7 +262,7 @@ if torch.cuda.is_available() and os.environ.get('LDRV2_TF32', '1') == '1':
     torch.backends.cudnn.allow_tf32 = True
     print(">>> [V02] TF32 ENABLED (LDRV2_TF32=0 to disable)", flush=True)
 
-# [V02-8] Global socket timeout: every network call issued without an
+# Global socket timeout: every network call issued without an
 # explicit timeout (OpenML dataset download in fetch_openml, TabPFN model
 # checkpoint download during pre-warm/first fit) RAISES an exception after
 # LDRV2_NET_TIMEOUT seconds instead of blocking forever. Root cause of the
@@ -368,15 +286,15 @@ def _parse_args():
         description='LDR2H200 — CBM benchmark',
         formatter_class=_argparse.ArgumentDefaultsHelpFormatter,
         add_help=True)
-    p.add_argument('--trials',       type=int, default=40,   # [V22]
+    p.add_argument('--trials',       type=int, default=40,
                    help='Number of Optuna HPO trials')
     p.add_argument('--epochs-hpo',   type=int, default=60,
                    help='Epochs per HPO trial')
-    p.add_argument('--epochs-final', type=int, default=250,  # [V22]
+    p.add_argument('--epochs-final', type=int, default=250,
                    help='Final training epochs')
     p.add_argument('--patience',     type=int, default=25,
                    help='Early stopping patience')
-    p.add_argument('--restarts',     type=int, default=2,    # [V22]
+    p.add_argument('--restarts',     type=int, default=2,
                    help='Number of final restarts')
     p.add_argument('--gpu-workers',  type=int, default=None,
                    help='Parallel GPU workers (default: auto = 3 per GPU)')
@@ -392,7 +310,7 @@ def _parse_args():
                    help='Dataset subset: 0=super(4), 1=small(10), 2=all(20)')
     p.add_argument('--no-menu', action='store_true',
                    help='Skip the interactive menu (script mode)')
-    # ---------------- [V02] new options ----------------
+    # --------------- new options ----------------
     p.add_argument('--hpo-timeout', type=float, default=0.0,
                    help='[V02-4] Wall-clock budget [s] for Optuna HPO per '
                         'CBM fit (0 = no limit, protocol identical to v01)')
@@ -415,7 +333,7 @@ def _parse_args():
                    help='[V20] Keep the inner validation split completely out of final CBM training; '
                         'also fit the TabPFN teacher only on the inner-fit split for distillation. '
                         'Use --no-strict-validation only to reproduce the historical v16 protocol.')
-    # ---------------- [V25] resilient execution ----------------
+    # --------------- resilient execution ----------------
     p.add_argument('--resilient', action='store_true',
                    help='Use the crash-safe SQLite queue and supervised workers.')
     p.add_argument('--resilient-self-test', action='store_true',
@@ -478,7 +396,7 @@ CBM_EPOCHS_FINAL  = _ARGS.epochs_final
 CBM_PATIENCE_ES   = _ARGS.patience
 CBM_N_RESTARTS    = _ARGS.restarts
 
-# [V02] new global configuration
+# new global configuration
 _CBM_HPO_TIMEOUT  = float(getattr(_ARGS, 'hpo_timeout', 0.0) or 0.0)
 _MON_INTERVAL     = int(getattr(_ARGS, 'monitor_interval', 60))
 _RESUME           = not getattr(_ARGS, 'no_resume', False)
@@ -493,10 +411,10 @@ _STRICT_VALIDATION = bool(getattr(_ARGS, 'strict_validation', True))
 print(f">>> [V20] strict_validation={_STRICT_VALIDATION} "
       f"(inner validation excluded from final CBM training when True)", flush=True)
 
-# ---------------------------------------------------------------------
+# --------------------------------------------------------------------
 # AUTOMATIC HARDWARE DETECTION (used if --gpu-workers / --cpu-workers
 # were not specified explicitly on the command line)
-# ---------------------------------------------------------------------
+# --------------------------------------------------------------------
 import multiprocessing as _mp
 _n_gpus_detected = torch.cuda.device_count()
 _n_cores_detected = _mp.cpu_count()
@@ -586,7 +504,7 @@ try:
 except ImportError:
     minimize_scalar = None
 
-# [V02-2] Lock removed: threading.Lock is not picklable (cloudpickle/
+# Lock removed: threading.Lock is not picklable (cloudpickle/
 # loky), and dict[tid]=v / dict.get(tid) operations are atomic in CPython
 # (GIL). The key = thread id, hence no races between tasks.
 _PROBA_CACHE = {}
@@ -649,7 +567,7 @@ class ProbaCachingClassifier(BaseEstimator, ClassifierMixin):
                 proba = None
 
             _PROBA_CACHE[tid] = proba
-            self._last_proba  = proba   # [V02-2] instance copy (loky-safe)
+            self._last_proba  = proba  # instance copy (loky-safe)
         except Exception:
             _PROBA_CACHE[tid] = None
             self._last_proba  = None
@@ -683,7 +601,7 @@ def _auc_roc(y_true, y_pred, labels=None):
         except Exception:
             pass
 
-    # [V24-FIX3] No silent fallback to a DIFFERENT functional. If class
+    # No silent fallback to a DIFFERENT functional. If class
     # probabilities are unavailable or ROC-AUC cannot be computed, AUC is
     # undefined for this task; return NaN rather than balanced accuracy
     # under the AUC_ROC name (the two functionals are not interchangeable).
@@ -783,10 +701,10 @@ class Fold:
         self.y_test  = y_test
         self.index   = index
         self.labels  = np.unique(np.concatenate([y_train, y_test]))
-        # [V24] Preserve raw outer-fold data and schema.  CBM/CBM_KE use
+        # Preserve raw outer-fold data and schema. CBM/CBM_KE use
         # these arrays so their inner validation preprocessing can be fitted
         # strictly on the inner-training subset rather than on all outer-train
-        # rows.  Other baselines continue to use x_train/x_test below.
+        # rows. Other baselines continue to use x_train/x_test below.
         self.x_train_raw = np.asarray(x_train_raw)
         self.x_test_raw  = np.asarray(x_test_raw)
         self.cat_idx = list(cat_idx)
@@ -1788,7 +1706,7 @@ def optimize_linguistic_hedges(model: CBMP1TSModelV4,
 class CBMClassifier(BaseEstimator, ClassifierMixin):
     def __init__(self, n_trials: int = None, mode: str = 'standalone',
                  ablate: str = None):
-        # [V21-T2] ablate in {None,'hedges','residual','smoothing','calibration'}
+        # ablate in {None,'hedges','residual','smoothing','calibration'}
         self.n_trials     = n_trials if n_trials is not None else CBM_N_TRIALS
         self.mode         = mode
         self.ablate       = ablate
@@ -1802,7 +1720,7 @@ class CBMClassifier(BaseEstimator, ClassifierMixin):
         self._raw_num_idx = []
         self._raw_feature_names = None
         self._transformed_feature_names = None
-        # [V25] Set by the resilient task runner.  It identifies a
+        # Set by the resilient task runner. It identifies a
         # unique seed/dataset/algorithm/fold state directory.
         self._resilience_context = None
 
@@ -1867,7 +1785,7 @@ class CBMClassifier(BaseEstimator, ClassifierMixin):
         idx_tr, idx_val = train_test_split(
             idx_all, test_size=0.20, stratify=y, random_state=SEED)
 
-        # [V24-FIX2] Split first; fit preprocessing, class weights, PPL
+        # Split first; fit preprocessing, class weights, PPL
         # percentiles and mRMR strictly on inner-train.
         X_all, X_tr, X_val = self._prepare_inputs(X, idx_tr, idx_val)
         d = X_all.shape[1]
@@ -1913,7 +1831,7 @@ class CBMClassifier(BaseEstimator, ClassifierMixin):
                 except Exception as exc:
                     raise RuntimeError(
                         f"TabPFN teacher failed in CBM_KE: {exc}") from exc
-            # ESWA v20: no additional teacher is used; CBM_KE uses TabPFN only.
+            # no additional teacher is used; CBM_KE uses TabPFN only.
             if soft_parts:
                 if _STRICT_VALIDATION:
                     soft_tr = np.mean(soft_parts, axis=0).astype(np.float32)
@@ -1928,7 +1846,7 @@ class CBMClassifier(BaseEstimator, ClassifierMixin):
                     "CBM_KE requested, but no TabPFN soft labels were produced.")
 
         def make_train_loader(X_a, y_a, C_a, bs, soft_a=None):
-            # [V02-1] FastTensorLoader instead of DataLoader(TensorDataset)
+            # FastTensorLoader instead of DataLoader(TensorDataset)
             ts = [torch.tensor(X_a, dtype=torch.float32, device=device),
                   torch.tensor(y_a, dtype=torch.long,    device=device),
                   torch.tensor(C_a, dtype=torch.float32, device=device)]
@@ -1977,14 +1895,14 @@ class CBMClassifier(BaseEstimator, ClassifierMixin):
             cdrop = trial.suggest_categorical('concept_dropout_p',
                                               [0.0, 0.05, 0.1, 0.15])
 
-            # [V24-FIX6] deterministic per-trial init: seed before build
+            # deterministic per-trial init: seed before build
             _seed_t = SEED + 1009 * (trial.number + 1)
             torch.manual_seed(_seed_t)
             np.random.seed(_seed_t % (2**31))
             if torch.cuda.is_available(): torch.cuda.manual_seed_all(_seed_t)
             m   = CBMP1TSModelV4(d, k_c, n_cls, hd, dr,
                                   concept_dropout_p=cdrop).to(device)
-            if getattr(self, 'ablate', None) == 'residual':   # [V21-T2]
+            if getattr(self, 'ablate', None) == 'residual':
                 _apply_residual_ablation(m)
             trl = make_train_loader(X_tr, y_tr, C_tr[:, :k_c], bs,
                                     soft_a=soft_tr if soft_tr is not None else None)
@@ -2001,7 +1919,7 @@ class CBMClassifier(BaseEstimator, ClassifierMixin):
                     label_smoothing=(0.0 if getattr(self, 'ablate', None)
                                      == 'smoothing' else 0.05),
                     trial=trial, silent=True)
-                # [V24-FIX1] Evaluate the objective AFTER pruning so that the
+                # Evaluate the objective AFTER pruning so that the
                 # rule budget rb actually influences Optuna. Previously the
                 # pre-pruning val_acc was returned, making rb a no-op in HPO.
                 m.keep_balanced_rules(k_total=rb)
@@ -2015,7 +1933,7 @@ class CBMClassifier(BaseEstimator, ClassifierMixin):
                 trial.set_user_attr('error', repr(_e))
                 if trial.number == 0:
                     print(f"  [CBM-HPO] Error trial-0: {_e}", flush=True)
-                # [V25] A transient CUDA/driver/resource error must abort the
+                # A transient CUDA/driver/resource error must abort the
                 # task and be retried later; it must not silently consume one
                 # of the requested scientific HPO trials.
                 if _is_retryable_gpu_error_text(repr(_e)):
@@ -2086,7 +2004,7 @@ class CBMClassifier(BaseEstimator, ClassifierMixin):
                     n_startup_trials=15, n_warmup_steps=20))
 
         # Only COMPLETE and scientifically PRUNED trials consume the target
-        # budget.  Transient resource FAIL trials are repeated after resume.
+        # budget. Transient resource FAIL trials are repeated after resume.
         _finished_scientific = sum(
             t.state in (optuna.trial.TrialState.COMPLETE,
                         optuna.trial.TrialState.PRUNED)
@@ -2260,7 +2178,7 @@ class CBMClassifier(BaseEstimator, ClassifierMixin):
         print(f"  [CBM] Active rules after pruning: {kept} "
               f"(target={best_rb}, K={n_cls})", flush=True)
 
-        if getattr(self, 'ablate', None) == 'hedges':        # [V21-T2]
+        if getattr(self, 'ablate', None) == 'hedges':
             print("  [ABLATE] Hedge optimisation skipped "
                   "(all exponents stay at 1).", flush=True)
         else:
@@ -2269,7 +2187,7 @@ class CBMClassifier(BaseEstimator, ClassifierMixin):
                 max_iter=20, silent=False)
             print(f"  [HEDGE] Modified exponents: {n_hedge}", flush=True)
 
-        if getattr(self, 'ablate', None) == 'calibration':   # [V21-T2]
+        if getattr(self, 'ablate', None) == 'calibration':
             self._temperature = 1.0
             print("  [ABLATE] Temperature scaling skipped (T=1).", flush=True)
         else:
@@ -2367,13 +2285,13 @@ class RIPPERMulticlassWrapper(BaseEstimator, ClassifierMixin):
 
 os.environ.setdefault('TABPFN_ACCEPT_MODEL_LICENSE', 'true')
 
-# ---------------------------------------------------------------------
-# [V20] TabPFN-3 teacher / baseline configuration
-# ---------------------------------------------------------------------
-# Current PriorLabs tabpfn releases use TabPFN-3 by default.  The v20
+# --------------------------------------------------------------------
+# TabPFN-3 teacher / baseline configuration
+# --------------------------------------------------------------------
+# Current PriorLabs tabpfn releases use TabPFN-3 by default. The v20
 # protocol deliberately relies on that default instead of forcing the old
-# ModelVersion.V2_5 checkpoint.  For non-interactive tmux/SSH runs, set
-# TABPFN_TOKEN in the environment (for example by sourcing .env).  Without
+# ModelVersion.V2_5 checkpoint. For non-interactive tmux/SSH runs, set
+# TABPFN_TOKEN in the environment (for example by sourcing .env). Without
 # it, recent TabPFN versions may block on an interactive licence/API-key
 # prompt; by default v20 fails fast with a clear diagnostic instead.
 _TABPFN_MODE = 'tabpfn-3-explicit-checkpoint'
@@ -2385,8 +2303,8 @@ if _TABPFN:
     except Exception:
         pass
 
-# [V24-FIX6] Publication runs pin the exact checkpoint explicitly.  The
-# official TabPFN API supports TabPFNClassifier(model_path=...).  Guessing the
+# Publication runs pin the exact checkpoint explicitly. The
+# official TabPFN API supports TabPFNClassifier(model_path=...). Guessing the
 # largest file in a cache is forbidden because it may not be the file used.
 _TABPFN_MODEL_PATH = os.environ.get(
     'LDRV25_TABPFN_MODEL_PATH',
@@ -2479,7 +2397,7 @@ def _make_tabpfn_v25(device_=device):
             "recorded compatible tabpfn version."
         ) from exc
 
-# [V21-P5] defaults follow the paper protocol (n<=10k after subsampling,
+# defaults follow the paper protocol (n<=10k after subsampling,
 # K<=10); raise explicitly via env for out-of-protocol experiments.
 _TABPFN_N_MAX = int(os.environ.get('LDRV25_TABPFN_N_MAX', os.environ.get('LDRV24_TABPFN_N_MAX', os.environ.get('LDRV20_TABPFN_N_MAX', '50000'))))
 _TABPFN_D_MAX = int(os.environ.get('LDRV25_TABPFN_D_MAX', os.environ.get('LDRV24_TABPFN_D_MAX', os.environ.get('LDRV20_TABPFN_D_MAX', '500'))))
@@ -2882,12 +2800,12 @@ def build_classifiers():
             kernel='rbf', probability=True,
             class_weight='balanced', random_state=SEED, C=1.0))))
 
-    # ----------------------------------------------------------------
-    # [V21-T1] Gradient-boosted trees + modern interpretable baselines.
+    # ---------------------------------------------------------------
+    # Gradient-boosted trees + modern interpretable baselines.
     # All CPU-side, n_jobs/threads = 1 for fair per-task timing and clean
     # process-level parallelism. Binary-only rule learners are wrapped in
     # One-vs-Rest for multiclass tasks.
-    # ----------------------------------------------------------------
+    # ---------------------------------------------------------------
     if _XGB:
         clfs.append(('XGBoost',
             wrap(lambda n_i, n_c: XGBClassifier(
@@ -2936,7 +2854,7 @@ def build_classifiers():
     else:
         print("[INFO] RuleFit/FIGS skipped (missing 'imodels').")
 
-    # [V21-T2] Ablation variants of CBM_KE (GPU tasks; the prefix
+    # Ablation variants of CBM_KE (GPU tasks; the prefix
     # 'CBM_KE_' routes them to the GPU executor via _is_gpu_clf).
     if _ABLATION:
         clfs.append(('CBM_KE_noHedge',
@@ -3206,7 +3124,7 @@ def merge_results(dir0, dir1, merged_dir):
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# [V24] PyTorch/NumPy RNGs are process-global.  Publication-integrity mode
+# PyTorch/NumPy RNGs are process-global. Publication-integrity mode
 # serializes complete GPU tasks so parallel threads cannot overwrite one
 # another's seeds during model construction, shuffling or training.
 _SERIALIZE_GPU_TASKS = os.environ.get('LDRV25_SERIALIZE_GPU_TASKS', os.environ.get('LDRV24_SERIALIZE_GPU_TASKS', '1')) != '0'
@@ -3216,8 +3134,8 @@ _GPU_CLF_NAMES = {'CBM', 'CBM_KE', 'TabPFN'}
 
 
 # =====================================================================
-# [V21-T3] multi-seed orchestration, [V21-T4] Holm-corrected Wilcoxon,
-# [V21-A5] environment manifest
+# multi-seed orchestration, Holm-corrected Wilcoxon,
+# environment manifest
 # =====================================================================
 def _set_run_seed(s):
     """[V21-T3] Re-seed every RNG and switch the global SEED."""
@@ -3290,7 +3208,7 @@ def _holm_adjust(pvals):
     """[V21-T4] Holm step-down adjustment. pvals: list of floats (NaN ok).
     Returns list of adjusted p in the original order."""
     import math
-    idx = [i for i, p in enumerate(pvals) if p == p]      # non-NaN
+    idx = [i for i, p in enumerate(pvals) if p == p]  # non-NaN
     m = len(idx)
     adj = [float('nan')] * len(pvals)
     order = sorted(idx, key=lambda i: pvals[i])
@@ -3614,7 +3532,7 @@ class _ProgressTracker:
         self.tasks_done   = 0
         self.t_start      = time.time()
         self.t_ds_start   = time.time()
-        self.t_last_task  = time.time()   # [V02-6] for STALL detection
+        self.t_last_task  = time.time()  # for STALL detection
         self._last_print  = 0.0
         self._print_every = 10.0
 
@@ -3752,9 +3670,9 @@ _PROGRESS = _ProgressTracker()
 
 
 # =====================================================================
-# [V02-6] RESOURCE MONITOR: CPU / RAM / GPU / progress / ETA / STALL
+# RESOURCE MONITOR: CPU / RAM / GPU / progress / ETA / STALL
 # =====================================================================
-_STALL_THRESHOLD_S = 1800   # 30 min without a finished task => warning
+_STALL_THRESHOLD_S = 1800  # 30 min without a finished task => warning
 
 
 def _read_gpu_stats():
@@ -3780,7 +3698,7 @@ def _read_ram_gib():
         with open('/proc/meminfo') as f:
             for line in f:
                 k, v = line.split(':', 1)
-                info[k] = int(v.split()[0])          # kB
+                info[k] = int(v.split()[0])  # kB
         tot   = info.get('MemTotal', 0)     / 1048576.0
         avail = info.get('MemAvailable', 0) / 1048576.0
         return tot, tot - avail
@@ -3813,7 +3731,7 @@ def _resource_monitor_worker(interval: int = 60):
                     f" ({snap['pct']:.1f}%)"
                     f" | ETA ~{eta_str}")
             print(line, flush=True)
-            # [V02-9] STALL must fire ALSO when tasks_done == 0: the
+            # STALL must fire ALSO when tasks_done == 0: the
             # observed v01 failure stalled BEFORE the first task completed
             # (startup network call), so a tasks_done>0 guard would have
             # hidden it for 10 days exactly like the heartbeat did.
@@ -3861,11 +3779,11 @@ def parallel_run_experiment(datasets, classifiers, results_directory, metrics,
           f"= {_n_total_res} CSV rows", flush=True)
     _PROGRESS.reset(ds_total=_n_ds, tasks_total=_n_total_res)
 
-    # -----------------------------------------------------------------
-    # [V02-5] CHECKPOINTING: every completed (Dataset, Algorithm, fold)
+    # ----------------------------------------------------------------
+    # CHECKPOINTING: every completed (Dataset, Algorithm, fold)
     # is immediately appended to checkpoint_rows.csv; after a restart
     # these tasks are skipped (unless --no-resume).
-    # -----------------------------------------------------------------
+    # ----------------------------------------------------------------
     _ckpt_path = os.path.join(results_directory, 'checkpoint_rows.csv')
     _ckpt_lock = _pt_threading.Lock()
     _done_keys = set()
@@ -3912,7 +3830,7 @@ def parallel_run_experiment(datasets, classifiers, results_directory, metrics,
 
     if _TABPFN and any(_is_gpu_clf(n) for n, _ in classifiers):
         print(f"  [PRE-WARM] TabPFN model-weight pre-loading...", flush=True)
-        # [V02-10] Pre-warm runs in a watchdog thread: even if a network
+        # Pre-warm runs in a watchdog thread: even if a network
         # layer ignores the global socket timeout, the main flow continues
         # after LDRV2_PREWARM_TIMEOUT seconds (default 600).
         def _prewarm_tabpfn():
@@ -3953,12 +3871,12 @@ def parallel_run_experiment(datasets, classifiers, results_directory, metrics,
         print(f"{'─'*60}", flush=True)
 
         _t_folds = time.time()
-        # [V21-T3] CV split depends on the CURRENT global seed
+        # CV split depends on the CURRENT global seed
         folds = list(ds.folds(n_folds=_n_folds, random_state=SEED))
         print(f"  Folds: {len(folds)} (pre-computed in "
               f"{time.time()-_t_folds:.1f}s)", flush=True)
 
-        # ----------------------- CPU TASKS [V02-2] ---------------------
+        # ---------------------- CPU TASKS ---------------------
         cpu_task_args = []
         for fold in folds:
             for clf_name, clf_factory in cpu_clfs:
@@ -4046,7 +3964,7 @@ def parallel_run_experiment(datasets, classifiers, results_directory, metrics,
         _cpu_thread = _pt_threading.Thread(target=_cpu_collector, daemon=True)
         _cpu_thread.start()
 
-        # ----------------------- GPU TASKS -----------------------------
+        # ---------------------- GPU TASKS -----------------------------
         gpu_futures = {}
         gpu_executor = ThreadPoolExecutor(
             max_workers=n_gpu_workers,
@@ -4071,7 +3989,7 @@ def parallel_run_experiment(datasets, classifiers, results_directory, metrics,
               flush=True)
 
         n_done = 0
-        # [V02-7] NOTE: in v01, fut.result(timeout=3600) after as_completed
+        # NOTE: in v01, fut.result(timeout=3600) after as_completed
         # could never raise TimeoutError (as_completed yields only ALREADY
         # completed futures). A hung task is now detected by the [STALL]
         # monitor instead of the dead timeout.
@@ -4279,8 +4197,8 @@ def _v25_protocol_payload():
 
 
 def _v25_protocol_hash():
-    # [V25.2] A controlled resume may keep the original protocol hash after
-    # an execution-engine-only repair.  The resume script reads the hash from
+    # A controlled resume may keep the original protocol hash after
+    # an execution-engine-only repair. The resume script reads the hash from
     # the existing SQLite run and exports it to every worker.
     override = os.environ.get('LDRV25_PROTOCOL_HASH_OVERRIDE', '').strip().lower()
     if override:
@@ -4419,7 +4337,7 @@ def _v25_reset_expired(con, ph):
 
 
 def _v25_requeue_worker_tasks(db, ph, worker_id, reason):
-    # [V25.2] A dead worker cannot renew its lease. Requeue all tasks still
+    # A dead worker cannot renew its lease. Requeue all tasks still
     # owned by that worker immediately instead of waiting lease_seconds.
     now = _v25_now()
     with _v25_db(db) as con:
@@ -4514,7 +4432,7 @@ def _v25_atomic_json(path, obj):
 
 def _v25_recover_atomic_results(root, db, ph):
     # Reconcile JSON files written just before a master/worker crash.
-    # [V25.3] One explicitly closed SQLite connection is reused for the full
+    # One explicitly closed SQLite connection is reused for the full
     # scan; V25.2 opened one connection per JSON file and leaked descriptors.
     directory = os.path.join(root, 'task_results', ph[:16])
     if not os.path.isdir(directory):
@@ -4749,15 +4667,15 @@ def _v25_worker_loop(kind, worker_id, gpu_id=None, preloaded=None):
 
 
 def _v25_cpu_child(index):
-    # [V25.2] Under spawn every process imports and initialises native
-    # libraries independently.  Nothing containing XGBoost/OpenMP state is
+    # Under spawn every process imports and initialises native
+    # libraries independently. Nothing containing XGBoost/OpenMP state is
     # inherited from the supervisor.
     return _v25_worker_loop('CPU', f'cpu-{index:02d}', None, preloaded=None)
 
 
 def _v25_cpu_supervisor():
     n = int(_ARGS.cpu_processes or max(1, min(24, _mp.cpu_count() - 4)))
-    # [V25.2] Never fork after importing PyTorch/XGBoost/OpenMP.
+    # Never fork after importing PyTorch/XGBoost/OpenMP.
     ctx = _mp.get_context('spawn')
     children = {}
     restarts = {i: 0 for i in range(n)}
@@ -4832,7 +4750,7 @@ def _v25_initialize_tasks():
     _v25_recover_atomic_results(root, db, ph)
     _record_versions(root)
     if os.environ.get('LDRV25_PROTOCOL_HASH_OVERRIDE', '').strip():
-        # Keep the original protocol.json as the publication record.  Record
+        # Keep the original protocol.json as the publication record. Record
         # the execution-engine repair separately.
         resume_record = {
             'protocol_hash': ph,
@@ -4989,8 +4907,8 @@ def _v25_entry():
 
 if __name__ == '__main__':
 
-    # [V25.1-FIX1] Dispatch resilient mode before entering the legacy
-    # two-worker execution path.  The previous v25 file defined the
+    # Dispatch resilient mode before entering the legacy
+    # two-worker execution path. The previous v25 file defined the
     # resilient queue but never called _v25_entry().
     if getattr(_ARGS, 'resilient_fd_self_test', False):
         import tempfile as _tempfile
@@ -5093,7 +5011,7 @@ if __name__ == '__main__':
         _PRESETS = {
             "0": dict(trials=8,   epochs_hpo=20,  patience=8,  epochs_final=60,  restarts=1),
             "1": dict(trials=30,  epochs_hpo=40,  patience=15, epochs_final=150, restarts=1),
-            "2": dict(trials=40,  epochs_hpo=80,  patience=40, epochs_final=250, restarts=2),  # [V22] full-run protocol
+            "2": dict(trials=40,  epochs_hpo=80,  patience=40, epochs_final=250, restarts=2),  # full-run protocol
             "3": dict(trials=120, epochs_hpo=100, patience=50, epochs_final=450, restarts=3),
         }
         if c in _PRESETS:
@@ -5169,11 +5087,11 @@ if __name__ == '__main__':
             '--restarts', str(_menu_restarts),
             '--datasets-group', _menu_ds_group,
             '--no-menu',
-            # [V02] propagate new options to spawned workers
+            # propagate new options to spawned workers
             '--hpo-timeout', str(_CBM_HPO_TIMEOUT),
             '--monitor-interval', str(_MON_INTERVAL),
             '--cpu-backend', _CPU_BACKEND,
-            # [V21-P4] propagate V20/V21 protocol flags to workers
+            # propagate V20/V21 protocol flags to workers
             '--seeds', ','.join(str(s) for s in _SEEDS),
         ] + (['--no-resume'] if not _RESUME else []) \
           + (['--ablation'] if _ABLATION else []) \
@@ -5192,7 +5110,7 @@ if __name__ == '__main__':
         os.makedirs(res_dir, exist_ok=True)
 
         _start_heartbeat(interval=120)
-        _start_resource_monitor(interval=_MON_INTERVAL)   # [V02-6]
+        _start_resource_monitor(interval=_MON_INTERVAL)
 
         if _DS_GROUP_MENU is not None:
             all_datasets = get_datasets_for_group(_DS_GROUP_MENU)
@@ -5226,8 +5144,8 @@ if __name__ == '__main__':
 
         t_exp_start = time.time()
 
-        _record_versions(res_dir)                       # [V21-A5]
-        _run_experiment_all_seeds(                      # [V21-T3]
+        _record_versions(res_dir)
+        _run_experiment_all_seeds(
             datasets,
             classifiers,
             results_directory=res_dir,
@@ -5315,8 +5233,8 @@ if __name__ == '__main__':
                 f'{res_dir}/gpu0',
                 f'{res_dir}/gpu1',
                 f'{res_dir}/merged')
-            _record_versions(os.path.join(res_dir, 'merged'))   # [V21-A5]
-            _holm_wilcoxon_reports(                              # [V21-T4]
+            _record_versions(os.path.join(res_dir, 'merged'))
+            _holm_wilcoxon_reports(
                 os.path.join(res_dir, 'merged', 'comparison.csv'),
                 os.path.join(res_dir, 'merged', 'wilcoxon_holm'))
             print(f"\n>>> DONE. Final results: {res_dir}/merged/",
@@ -5329,7 +5247,7 @@ if __name__ == '__main__':
         print(f">>> SINGLE-GPU/CPU MODE (detected {n_gpus} GPU).", flush=True)
         res_dir = './results_LDR/single'
         os.makedirs(res_dir, exist_ok=True)
-        _start_resource_monitor(interval=_MON_INTERVAL)   # [V02-6]
+        _start_resource_monitor(interval=_MON_INTERVAL)
 
         if _DS_GROUP_MENU is not None:
             datasets = get_datasets_for_group(_DS_GROUP_MENU)
@@ -5344,8 +5262,8 @@ if __name__ == '__main__':
         print(f"    Metrics:       {[m[0] for m in CACP_METRICS]}", flush=True)
         print(f"    Results ->       {res_dir}\n", flush=True)
 
-        _record_versions(res_dir)                       # [V21-A5]
-        _run_experiment_all_seeds(                      # [V21-T3]
+        _record_versions(res_dir)
+        _run_experiment_all_seeds(
             datasets,
             classifiers,
             results_directory=res_dir,
@@ -5354,7 +5272,7 @@ if __name__ == '__main__':
             n_cpu_workers=_N_CPU_WORKERS,
             n_folds=_N_FOLDS_MENU
         )
-        _holm_wilcoxon_reports(                         # [V21-T4]
+        _holm_wilcoxon_reports(
             os.path.join(res_dir, 'comparison.csv'),
             os.path.join(res_dir, 'wilcoxon_holm'))
         print(f"\n>>> EXPERIMENT FINISHED. Results: {res_dir}", flush=True)
