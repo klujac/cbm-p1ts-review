@@ -777,7 +777,7 @@ def _select_run_mode_from_cli_or_prompt() -> str:
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="ESWA v25 diabetes rule-generation: fast / medium / normal"
+        description="CBM-P1TS diabetes rule-generation: fast / medium / normal"
     )
     parser.add_argument(
         "positional_mode",
@@ -821,7 +821,7 @@ def _select_run_mode_from_cli_or_prompt() -> str:
         return "normal"
 
     print("=" * 78)
-    print("ESWA v25 diabetes rule-generation")
+    print("CBM-P1TS diabetes rule-generation")
     print("=" * 78)
     print("Choose execution mode:")
     print()

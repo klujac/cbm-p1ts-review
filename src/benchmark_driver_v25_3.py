@@ -108,7 +108,7 @@ except ImportError:
 # regardless of whether the optional `disabled_optional_tree_model` library is installed.
 _DISABLED_OPTIONAL_TREE_CLASSIFIER = None
 _DISABLED_OPTIONAL_TREE_MODEL = False
-print("[INFO] ESWA v20 benchmark protocol uses the reported classifier set only.")
+print("[INFO] Benchmark protocol uses the reported classifier set only.")
 
 try:
     from catboost import CatBoostClassifier
@@ -2741,7 +2741,7 @@ class _DL85Wrapper(BaseEstimator, ClassifierMixin):
             return proba
 
 def build_classifiers():
-    """Build exactly the classifiers reported in the ESWA v20 manuscript.
+    """Build exactly the classifiers reported in the manuscript.
 
     The reported experimental comparison contains:
       - proposed models: CBM and CBM_KE;
@@ -2870,7 +2870,7 @@ def build_classifiers():
             wrap(lambda n_i, n_c: CBMClassifier(
                 mode='ke', n_trials=CBM_N_TRIALS, ablate='calibration'))))
 
-    print(f">>> Loaded classifiers for ESWA v21 protocol: {len(clfs)}"
+    print(f">>> Loaded classifiers for the benchmark protocol: {len(clfs)}"
           f" (ablation={'on' if _ABLATION else 'off'})", flush=True)
     for name, _ in clfs:
         print(f"    - {name}", flush=True)
