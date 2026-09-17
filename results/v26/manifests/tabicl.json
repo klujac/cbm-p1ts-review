@@ -1,0 +1,10 @@
+{
+  "variant": "tabicl",
+  "description": "R1.2: TabICLv2 evaluated in-context (no HPO) on the same stratified folds, seeds and metrics as the main benchmark.",
+  "tabicl": "2.2.0",
+  "torch": "2.11.0+cu128",
+  "sklearn": "1.9.1",
+  "python": "3.12.3",
+  "runner_sha256": "a8f872d14c19275b98497b8b142fa0f39daa2005be95c0a63ffd78b13439e840",
+  "started": "2026-09-15 08:45:01"
+}

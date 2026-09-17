@@ -1,0 +1,14 @@
+{
+  "variant": "fh_noresid",
+  "description": "R4.2: residual S=0 and b_skip=0 (native v25 ablation)",
+  "config": {
+    "src": "v26",
+    "ablate": "residual"
+  },
+  "protocol_hash": "4b81617b6dc101e185b035198ead15c5af79a9336272fc14bf51bdcc941be7ce",
+  "driver_sha256": "e4f9a878fbfb5067100aafeb6353df7e357644a3196bbd035f1b8f8a5f14f599",
+  "runner_sha256": "4fca27fe55b5605fbb1e899184a8fecd1db472191dda1924358e986aa4d600de",
+  "python": "3.12.3",
+  "torch": "2.10.0+cu128",
+  "started": "2026-09-12 21:24:36"
+}

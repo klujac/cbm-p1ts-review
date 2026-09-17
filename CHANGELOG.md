@@ -1,3 +1,50 @@
+## v26 (September 2026) — revised version for Information Sciences
+
+The benchmark driver `src/benchmark_driver_v25_3.py` is unchanged. Every
+experiment below is a separate runner in `src/v26/` that imports it and
+changes exactly one factor.
+
+### Method change
+- Concept dropout removed from the search space (`concept_dropout_p = 0`)
+  and the concept loss applied to the undropped sigmoid output, so all
+  training-time concept values lie in [0,1]. Propositions 1 and 2 of the
+  paper show that the previous arrangement biased the concept predictor
+  and that clamping would replace one bias by another.
+- 841 folds re-run (69.2% of CBM and 71.0% of CBM-KE folds had selected
+  p_c > 0). Median change: exactly 0.0000 in all six metrics.
+
+### New experiments
+- Six one-factor ablations: residual removed, rule branch removed,
+  KL term removed, label smoothing removed, clamped dropout, concepts
+  fixed to percentile targets (6600 tasks).
+- Six baselines tuned with the same 40-trial Optuna budget as CBM-P1TS,
+  with their default configuration as an additional candidate
+  (3600 tasks).
+- TabICLv2 (ICML 2026) on the same folds, in context (600 tasks).
+- Large-scale track: six datasets up to 130,064 rows (80 tasks).
+- Subsampling-stability experiment: three stratified and three
+  non-stratified subsamples per dataset (270 tasks).
+
+### New formal results
+- Proposition 1: supervising post-dropout concepts biases the minimiser
+  to (1-p)t.
+- Proposition 2: clamping is biased to min{c, 1-p} and has a zero
+  gradient above 1-p.
+- Proposition 10: class-weighted label smoothing makes a constant
+  prediction optimal when IR > 1 + K(1-eps)/eps.
+- Proposition 11: firing strengths sum to at most one for non-dilating
+  hedges, bounding the rules involved in a single audit.
+
+### New files
+- `src/v26/` — 14 runners and analysis scripts, 16 task lists.
+- `results/v26/` — fold-level results of every run, with manifests.
+- `REPRODUCE_v26.md` — reproduction guide for the revision.
+- `src/v26/verify_paper_numbers.py` — recomputes every published number
+  from the released results (44 checks, no GPU).
+
+### Totals
+10,621 fold-level tasks, none failed. About 440 GPU task-hours and
+470 CPU task-hours.
 # Changelog
 
 All notable changes to the CBM-P1TS benchmark code. The format loosely

@@ -1,0 +1,13 @@
+{
+  "variant": "stability",
+  "protocol_hash": "aad2a042a3ffbc1188e9bb720b7b6abaa27163259003d9e7fc29ef3d75da28a2",
+  "n_sub": 10000,
+  "n_folds": 5,
+  "n_trials": 40,
+  "description": "R2.4: 3 stratified and 3 non-stratified subsamples of 10000 rows per dataset (bank, magic, pendigits), stratified 5-fold CV, outer seed 42.",
+  "driver_sha256": "e4f9a878fbfb5067100aafeb6353df7e357644a3196bbd035f1b8f8a5f14f599",
+  "runner_sha256": "84f2822df5101483ba208e2ffcc092f2b1d3a916409b9ac748354aeed826b667",
+  "python": "3.12.3",
+  "torch": "2.10.0+cu128",
+  "started": "2026-09-15 10:29:55"
+}

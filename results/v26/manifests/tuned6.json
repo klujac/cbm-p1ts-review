@@ -1,0 +1,10 @@
+{
+  "variant": "tuned6",
+  "description": "R2.2: XGBoost, LightGBM, CatBoost, EBM, RuleFit, FIGS tuned with Optuna TPE (40 trials, per-fold timeout 7200s) plus the exact v25 default as an extra candidate, selection on inner-validation accuracy (ties -> default), inner split and criterion identical to CBM-P1TS, refit on the full outer training fold; base settings identical to v25.",
+  "driver_sha256": "e4f9a878fbfb5067100aafeb6353df7e357644a3196bbd035f1b8f8a5f14f599",
+  "runner_sha256": "9aa102a6c525fd5e895a778d9970926475cb4307fddde17e5a7fbc3e784b988f",
+  "tuned_baselines_sha256": "401e110927d1bb40495d36314cba698b22255253aa7c6e67aff810532371a8d1",
+  "python": "3.12.3",
+  "optuna": "4.7.0",
+  "started": "2026-09-11 15:32:59"
+}

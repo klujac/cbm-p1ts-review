@@ -1,0 +1,14 @@
+{
+  "variant": "fh_fixedppl",
+  "description": "R4.1: concepts fixed to PPL memberships (no learned concept predictor)",
+  "config": {
+    "src": "v26",
+    "patch": "fixedppl"
+  },
+  "protocol_hash": "4fa09e1285eeeb0960c5b901e6f2a5e7fa5930673faec6b0cd11e7626d81df96",
+  "driver_sha256": "e4f9a878fbfb5067100aafeb6353df7e357644a3196bbd035f1b8f8a5f14f599",
+  "runner_sha256": "4fca27fe55b5605fbb1e899184a8fecd1db472191dda1924358e986aa4d600de",
+  "python": "3.12.3",
+  "torch": "2.10.0+cu128",
+  "started": "2026-09-12 09:42:21"
+}

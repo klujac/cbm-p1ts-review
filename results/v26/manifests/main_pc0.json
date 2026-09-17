@@ -1,0 +1,12 @@
+{
+  "variant": "main_pc0",
+  "description": "R2.3: HPO search space without concept dropout (p_c = 0; concepts stay in [0,1] and the concept loss acts on the undropped sigmoid output). Everything else identical to v25.3.",
+  "protocol_hash": "9aa1988ce57bc79b7f2feb4bef7fa49d3bb33f949da73bcbeb92b05df8ab3327",
+  "driver": "/home/jacklu/v24/benchmark_driver_v25_3.py",
+  "driver_sha256": "e4f9a878fbfb5067100aafeb6353df7e357644a3196bbd035f1b8f8a5f14f599",
+  "runner_sha256": "becee5addceafad17aca67738d0ae2122dc43839739f81314cde22f014bcb675",
+  "python": "3.12.3",
+  "torch": "2.10.0+cu128",
+  "optuna": "4.7.0",
+  "started": "2026-09-11 12:37:54"
+}

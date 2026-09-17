@@ -1,0 +1,13 @@
+{
+  "variant": "large",
+  "protocol_hash": "be38a03b7203947a9557871a52f92533d8853ee9e60e91f2a9c3d139a645cc80",
+  "n_trials": 15,
+  "n_folds": 5,
+  "seed": 42,
+  "description": "R1.1: six large datasets (19k-130k rows), stratified 5-fold, seed 42, no subsampling. Documented deviation for compute: 15 HPO trials (vs 40) and 5 folds (vs 10); TabPFN row limit raised to 200000. All other protocol elements identical.",
+  "driver_sha256": "e4f9a878fbfb5067100aafeb6353df7e357644a3196bbd035f1b8f8a5f14f599",
+  "runner_sha256": "1fd5db576c9224e4e2c8d3cfe7deb2cee09c21527f15cc4fcf966caa05b92c5b",
+  "python": "3.12.3",
+  "torch": "2.10.0+cu128",
+  "started": "2026-09-13 23:43:02"
+}

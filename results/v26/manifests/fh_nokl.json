@@ -1,0 +1,15 @@
+{
+  "variant": "fh_nokl",
+  "description": "R2.5: KL term removed, same alpha_hard (a*CE + lc*MSE + ls*L1)",
+  "config": {
+    "src": "v26",
+    "patch": "nokl",
+    "ke_only": true
+  },
+  "protocol_hash": "35df7a64a2a2ef99283f1a3152e7d0f6246df8febe6d2cfde627b097c58f1949",
+  "driver_sha256": "e4f9a878fbfb5067100aafeb6353df7e357644a3196bbd035f1b8f8a5f14f599",
+  "runner_sha256": "4fca27fe55b5605fbb1e899184a8fecd1db472191dda1924358e986aa4d600de",
+  "python": "3.12.3",
+  "torch": "2.10.0+cu128",
+  "started": "2026-09-12 09:42:41"
+}

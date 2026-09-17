@@ -1,0 +1,14 @@
+{
+  "variant": "fh_ls0",
+  "description": "R4.4: label smoothing 0 (native v25 ablation)",
+  "config": {
+    "src": "v26",
+    "ablate": "smoothing"
+  },
+  "protocol_hash": "d0b791346bd2cba09493bd10de7a35ac7ab51a92628eff6db9c8f8b51ec16ac8",
+  "driver_sha256": "e4f9a878fbfb5067100aafeb6353df7e357644a3196bbd035f1b8f8a5f14f599",
+  "runner_sha256": "4fca27fe55b5605fbb1e899184a8fecd1db472191dda1924358e986aa4d600de",
+  "python": "3.12.3",
+  "torch": "2.10.0+cu128",
+  "started": "2026-09-13 09:52:37"
+}
