@@ -10,8 +10,8 @@
 
 ## STEP 1 - Clone and create virtual environment
 
-    git clone https://github.com/klujac/cbm-p1ts-research
-    cd cbm-p1ts-research
+    git clone https://github.com/klujac/cbm-p1ts-review
+    cd cbm-p1ts-review
     python3 -m venv .venv
     source .venv/bin/activate
     export PYTHONNOUSERSITE=1
@@ -51,7 +51,7 @@ Protocol hash must remain: 9e2fd6f6c51d2e9150021e0e2ef5e8c539775437f6c81a0950760
 
 ## STEP 5 - Verify results
 
-    python3 -c "import pandas as pd; df=pd.read_csv('results/comparison.csv'); print('Rows:',len(df),'(expected 9600)'); print('OK:',(df.Status=='OK').sum(),'(expected 9360)'); ds=df.groupby(['Algorithm','Dataset'])['AUC_ROC'].mean(); print('CBM-KE AUC:',round(ds['CBM_KE'].mean(),3),'(paper: 0.935)')"
+    python3 -c "import pandas as pd; df=pd.read_csv('results/comparison.csv'); print('Rows:',len(df),'(expected 9600)'); print('OK:',(df.Status=='OK').sum(),'(expected 9360)'); ds=df.groupby(['Algorithm','Dataset'])['AUC_ROC'].mean(); print('CBM-KE AUC:',round(ds['CBM_KE'].mean(),3),'(original submission: 0.935; revised value in REPRODUCE_v26.md)')"
 
 ## STEP 6 - Generate diabetes rules (approx. 2 hours)
 
