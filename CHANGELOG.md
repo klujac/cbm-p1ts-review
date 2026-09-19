@@ -43,7 +43,7 @@ changes exactly one factor.
   from the released results (44 checks, no GPU).
 
 ### Totals
-10,631 fold-level tasks, none failed. About 440 GPU task-hours and
+21,242 fold-level tasks, none failed. About 440 GPU task-hours and
 470 CPU task-hours.
 # Changelog
 

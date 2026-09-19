@@ -146,7 +146,7 @@ reproduces the driver's folds.
 
     GPU:  about 440 task-hours (roughly 4 days on 2x H200)
     CPU:  about 470 task-hours (roughly 30 h on 16 processes)
-    Tasks: 10,631 fold-level tasks, none of which failed
+    Tasks: 21,242 fold-level tasks, none of which failed
 
 Every run writes a manifest with the protocol hash, the driver SHA-256,
 the runner SHA-256 and the library versions; copies are in

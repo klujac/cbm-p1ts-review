@@ -54,6 +54,16 @@ for f, alg, met, paper in [('v26_fh_noresid', 'CBM_KE', 'Accuracy', -0.029),
     b = fm.xs(alg, level=1).reindex(a.index)
     check(f'{f.replace("v26_fh_","")}, {alg}, {met}', a[met].mean() - b[met].mean(), paper, 0.0015)
 
+print('\n== Clamped concept dropout (Section 4.3e)')
+cl = pd.read_csv(f'{R}/v26_fh_clamp.csv')
+orig = pd.read_csv('results/comparison.csv')
+mc = cl.merge(orig[K + MET], on=K, suffixes=('_cl', '_v25'))
+for m, paper in [('Accuracy', 0.0000), ('AUC_ROC', 0.0000), ('MCC', 0.0000)]:
+    d = (mc[m + '_cl'] - mc[m + '_v25']).dropna()
+    check(f'clamp vs unclamped, fold-level median {m}', d.median(), paper, 0.0005)
+sd_cl = cl.groupby(['Dataset', 'Algorithm']).Accuracy.std().mean()
+check('clamp: mean within-dataset s.d. of accuracy', sd_cl, 0.0292, 0.0005)
+
 print('\n== Distillation isolated: KL term removed (Section 4.3c)')
 nokl = pd.read_csv(f'{R}/v26_fh_nokl.csv').groupby('Dataset')[MET].mean()
 ke = fm.xs('CBM_KE', level=1).reindex(nokl.index)
