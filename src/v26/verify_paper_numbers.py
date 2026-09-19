@@ -83,7 +83,8 @@ for dsn, paper in [('page-blocks', 0.727), ('wine-quality', 0.106)]:
 
 print('\n== Table 8: large-scale track (Section 4.4)')
 L = pd.read_csv(f'{R}/v26_large.csv').groupby(['Dataset', 'Algorithm'])[['AUC_ROC', 'Accuracy']].mean()
-for dsn, alg, met, paper in [('MiniBooNE', 'CBM', 'AUC_ROC', 0.979), ('shuttle', 'CBM', 'Accuracy', 0.340),
+for dsn, alg, met, paper in [('MiniBooNE', 'CBM', 'AUC_ROC', 0.979), ('MiniBooNE', 'CBM_KE', 'AUC_ROC', 0.987),
+                             ('MiniBooNE', 'TabPFN', 'AUC_ROC', 0.990), ('shuttle', 'CBM', 'Accuracy', 0.340),
                              ('shuttle', 'CBM_KE', 'Accuracy', 0.081), ('shuttle', 'CBM_KE', 'AUC_ROC', 0.808),
                              ('bank_full', 'CBM_KE', 'AUC_ROC', 0.923), ('magic_full', 'CBM_KE', 'AUC_ROC', 0.939)]:
     check(f'{dsn} / {alg} / {met}', L.loc[(dsn, alg), met], paper, 0.0015)

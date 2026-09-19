@@ -21,7 +21,7 @@ changes exactly one factor.
   with their default configuration as an additional candidate
   (3600 tasks).
 - TabICLv2 (ICML 2026) on the same folds, in context (600 tasks).
-- Large-scale track: six datasets up to 130,064 rows (80 tasks).
+- Large-scale track: six datasets up to 130,064 rows (90 tasks).
 - Subsampling-stability experiment: three stratified and three
   non-stratified subsamples per dataset (270 tasks).
 
@@ -43,7 +43,7 @@ changes exactly one factor.
   from the released results (44 checks, no GPU).
 
 ### Totals
-10,621 fold-level tasks, none failed. About 440 GPU task-hours and
+10,631 fold-level tasks, none failed. About 440 GPU task-hours and
 470 CPU task-hours.
 # Changelog
 

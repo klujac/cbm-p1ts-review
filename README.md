@@ -36,8 +36,8 @@ hidden modification was made.
 New in the revision: concept dropout removed (841 folds re-run), six
 one-factor ablations (6600 tasks), six baselines tuned with the same
 budget as our model (3600 tasks), TabICLv2 (600 tasks), a large-scale
-track up to 130,064 rows (80 tasks) and a subsampling-stability
-experiment (270 tasks). In total 10,621 fold-level tasks, none of which
+track up to 130,064 rows (90 tasks) and a subsampling-stability
+experiment (270 tasks). In total 10,631 fold-level tasks, none of which
 failed.
 
 ## Files
